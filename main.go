@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/md5"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -36,22 +39,35 @@ type Blockchain struct {
 	blocks []*Block
 }
 
-var Blockchain *Blockchain
+var blockchain *Blockchain
 
 
 func newBook(w http.ResponseWriter, r *http.Request) {
 	var book Book
 	err := json.NewDecoder(r.Body).Decode(&book)
 	if err != nil {
-		respondWithJSON(w, r, http.StatusBadRequest, r.Body)
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Printf("Could not decode the request body as Book: %v", err)
+		w.Write([]byte("Could not decode the request body as Book"))
 		return
 	}
 
-	defer r.Body.Close()
+	h := md5.New()
 
-	newBlock := Blockchain.AddBlock(book)
+	io.WriteString(h, book.ISBN+book.PublishDate)
+	book.ID = fmt.Sprintf("%x", h.Sum(nil))
 
-	respondWithJSON(w, r, http.StatusCreated, newBlock)
+	resp, err := json.MarshalIndent(book, "", " ")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Printf("Could not marshal book object: %v", err)
+		w.Write([]byte("Could not marshal book object"))
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write(resp)
+
 }
 
 func main() {
