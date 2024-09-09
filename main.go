@@ -39,43 +39,78 @@ type Blockchain struct {
 	blocks []*Block
 }
 
-var blockchain *Blockchain
+var Blockchain *Blockchain
+
+func writeBlock(w http.ResponseWriter, r *http.Request) {
+	// Decode the incoming request body into a BookCheckout struct.
+	var checkoutItem BookCheckout
+	if err := json.NewDecoder(r.Body).Decode(&checkoutItem); err != nil {
+		handleError(w, http.StatusInternalServerError, "Could not decode request body", err)
+		return
+	}
+
+	// Add the new block to the blockchain.
+	BlockChain.AddBlock(checkoutItem)
+
+	// Marshal the checkout item into a JSON response.
+	resp, err := json.MarshalIndent(checkoutItem, "", " ")
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, "Could not marshal response", err)
+		return
+	}
+
+	// Write the response with a 200 OK status.
+	w.WriteHeader(http.StatusOK)
+	w.Write(resp)
+}
 
 
 func newBook(w http.ResponseWriter, r *http.Request) {
 	var book Book
+
+	// Decode the JSON request body into the Book struct.
 	err := json.NewDecoder(r.Body).Decode(&book)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		log.Printf("Could not decode the request body as Book: %v", err)
-		w.Write([]byte("Could not decode the request body as Book"))
+		handleError(w, http.StatusBadRequest, "Could not decode the request body as Book", err)
 		return
 	}
 
+	// Create a unique ID for the book using MD5 hash.
 	h := md5.New()
-
 	io.WriteString(h, book.ISBN+book.PublishDate)
 	book.ID = fmt.Sprintf("%x", h.Sum(nil))
 
+	// Marshal the book object into a JSON response.
 	resp, err := json.MarshalIndent(book, "", " ")
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		log.Printf("Could not marshal book object: %v", err)
-		w.Write([]byte("Could not marshal book object"))
+		handleError(w, http.StatusInternalServerError, "Could not marshal book object", err)
 		return
 	}
 
+	// Write the successful response.
 	w.WriteHeader(http.StatusCreated)
-	w.Write(resp)
+	_, err = w.Write(resp)
+	if err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
+}
 
+// handleError is a helper function for handling errors consistently.
+func handleError(w http.ResponseWriter, statusCode int, message string, err error) {
+	w.WriteHeader(statusCode)
+	log.Printf("%s: %v", message, err)
+	_, writeErr := w.Write([]byte(message))
+	if writeErr != nil {
+		log.Printf("Error writing error message to response: %v", writeErr)
+	}
 }
 
 func main() {
 	r := mux.NewRouter()
 
-	r.Handle("/", getBlockchain).Methods("GET")
-	r.Handle("/", writeBlock).Methods("POST") 
-	r.Handle("/new", newBook).Methods("POST")
+	r.HandleFunc("/", getBlockchain).Methods("GET")
+	r.HandleFunc("/", writeBlock).Methods("POST") 
+	r.HandleFunc("/new", newBook).Methods("POST")
 
 	log.Println("Listening on port 3000")
 	log.Fatal((http.ListenAndServe(":3000", r)))
